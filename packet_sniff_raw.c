@@ -4,6 +4,10 @@
 #include<stdbool.h>
 #include<sys/socket.h>
 #include<sys/types.h>
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include<linux/if_packet.h>
 #include<netinet/in.h>
@@ -12,6 +16,8 @@
 #include<netinet/udp.h>		// header udp
 #include<netinet/tcp.h>
 #include<arpa/inet.h>           // Empeche un warning sur inet_ntoa
+
+#include "arg.h"
 
 FILE* log_txt;
 int total,tcp,udp,icmp,igmp,other,iphdrlen;
@@ -155,14 +161,65 @@ void data_process(unsigned char* buffer,int buflen)
 }
 
 
+// Error : ./packet_sniff -p [protocol number] -m [source mac addr] -n [dest mac addr]
+//                -s [source ip] -d [dest ip] -t [source port] -r [dest port]
+struct arg* get_arg(int argc, char **argv) {
+	struct arg* arg = malloc(sizeof(struct arg*));
 
-int main()
+  int index;
+  int c;
+
+  opterr = 0;
+
+  while ((c = getopt (argc, argv, "p:m:n:s:d:t:r")) != -1)
+    switch (c)
+      {
+      case 'p':
+        arg->protocol = atoi(optarg);
+        break;
+      case 'm':
+        arg->sourceMac = optarg;
+        break;
+      case 'n':
+        arg->destMac = optarg;
+        break;
+      case 's':
+        arg->sourceIp = optarg;
+      case 'd':
+        arg->destIp = optarg;
+      case 't':
+        arg->sourcePort = atoi(optarg);
+      case 'r':
+        arg->destPort = atoi(optarg);
+      case '?':
+        if (optopt == 'c')
+          fprintf (stderr, "Option -%c requires an argument.\n", optopt);
+        else if (isprint (optopt))
+          fprintf (stderr, "Unknown option `-%c'.\n", optopt);
+        else
+          fprintf (stderr,
+                   "Unknown option character `\\x%x'.\n",
+                   optopt);
+        return NULL;
+      default:
+        abort ();
+      }
+
+  for (index = optind; index < argc; index++)
+    printf ("Non-option argument %s\n", argv[index]);
+  return arg;
+}
+
+
+int main(int argc, char *argv[])
 {
 
 	int sock_r,saddr_len,buflen;
 
 	unsigned char* buffer = (unsigned char *)malloc(65536);
 	memset(buffer,0,65536);
+
+	struct arg* arg = get_arg(argc, argv);
 
 	log_txt=fopen("log.txt","w");
 	if(!log_txt)
