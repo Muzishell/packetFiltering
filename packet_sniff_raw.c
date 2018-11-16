@@ -25,27 +25,14 @@ int total,tcp,udp,icmp,igmp,other,iphdrlen;
 struct sockaddr saddr;
 struct sockaddr_in source,dest;
 
-void ethernet_header(unsigned char* buffer,int buflen)
-{
-	struct ethhdr *eth = (struct ethhdr *)(buffer);
+void write_ethernet_header(struct ethhdr* eth) {
 	fprintf(log_txt,"\nEthernet Header\n");
 	fprintf(log_txt,"\t|-Source Address	: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5]);
 	fprintf(log_txt,"\t|-Destination Address	: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
 	fprintf(log_txt,"\t|-Protocol		: %d\n",eth->h_proto);
-
 }
 
-void ip_header(unsigned char* buffer,int buflen)
-{
-	struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
-
-	iphdrlen =ip->ihl*4;
-
-	memset(&source, 0, sizeof(source));
-	source.sin_addr.s_addr = ip->saddr;
-	memset(&dest, 0, sizeof(dest));
-	dest.sin_addr.s_addr = ip->daddr;
-
+void write_ip_header(struct iphdr* ip) {
 	fprintf(log_txt , "\nIP Header\n");
 
 	fprintf(log_txt , "\t|-Version              : %d\n",(unsigned int)ip->version);
@@ -61,6 +48,19 @@ void ip_header(unsigned char* buffer,int buflen)
 
 	printf("\t|-Source IP         : %s\n", inet_ntoa(source.sin_addr));
 	printf("\t|-Destination IP    : %s\n",inet_ntoa(dest.sin_addr));
+}
+
+struct iphdr* get_ip_header(unsigned char* buffer,int buflen)
+{
+	struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
+
+	iphdrlen =ip->ihl*4;
+
+	memset(&source, 0, sizeof(source));
+	source.sin_addr.s_addr = ip->saddr;
+	memset(&dest, 0, sizeof(dest));
+	dest.sin_addr.s_addr = ip->daddr;
+	return (ip);
 }
 
 void payload(unsigned char* buffer,int buflen)
@@ -82,13 +82,54 @@ void payload(unsigned char* buffer,int buflen)
 
 }
 
-struct tcphdr* tcp_header(unsigned char* buffer,int buflen)
+int tcp_header(unsigned char* buffer,int buflen, struct arg* arg)
 {
-	fprintf(log_txt,"\n*************************TCP Packet******************************");
-   	ethernet_header(buffer,buflen);
-  	ip_header(buffer,buflen);
+	struct ethhdr *eth = (struct ethhdr *)(buffer);
+	struct iphdr *ip = get_ip_header(buffer, buflen);
+	struct tcphdr *tcp = (struct tcphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
 
-   	struct tcphdr *tcp = (struct tcphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
+	if (arg && arg->sourceMac) {
+		char* sourceMac = malloc(sizeof(char*));
+		sprintf(sourceMac,"%.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5]);
+		if (strcmp(sourceMac, arg->sourceMac) != 0)
+			printf("Ce n'est pas pareil");
+			return -1;
+	}
+
+	if (arg && arg->destMac) {
+		char* destMac = malloc(sizeof(char*));
+		sprintf(destMac,"%.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
+		if (strcmp(destMac, arg->destMac) != 0)
+			return -1;
+	}
+
+	if (arg && arg->sourceIp) {
+		if (strcmp(inet_ntoa(source.sin_addr), arg->sourceIp) != 0)
+			return -1;
+	}
+
+	if (arg && arg->destIp) {
+		if (strcmp(inet_ntoa(dest.sin_addr), arg->destIp) != 0)
+			return -1;
+	}
+
+	if (arg->sourcePort) {
+		if (ntohs(tcp->source) != arg->sourcePort) {
+			return -1;
+		}
+	}
+
+	if (arg->destPort) {
+		if (ntohs(tcp->dest) != arg->destPort) {
+			return -1;
+		}
+	}
+
+	printf("\n\t|TCP Packet|\n");
+	fprintf(log_txt,"\n*************************TCP Packet******************************");
+   	write_ethernet_header(eth);
+  	write_ip_header(ip);
+
    	fprintf(log_txt , "\nTCP Header\n");
    	fprintf(log_txt , "\t|-Source Port          : %u\n",ntohs(tcp->source));
    	fprintf(log_txt , "\t|-Destination Port     : %u\n",ntohs(tcp->dest));
@@ -109,17 +150,58 @@ struct tcphdr* tcp_header(unsigned char* buffer,int buflen)
 	payload(buffer,buflen);
 
 fprintf(log_txt,"*****************************************************************\n\n\n");
-return tcp;
+return 0;
 }
 
-struct udphdr* udp_header(unsigned char* buffer, int buflen)
+int udp_header(unsigned char* buffer, int buflen, struct arg* arg)
 {
+		struct ethhdr *eth = (struct ethhdr *)(buffer);
+		struct iphdr *ip = get_ip_header(buffer, buflen);
+		struct udphdr *udp = (struct udphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
+
+		if (arg && arg->sourceMac) {
+			char* sourceMac = malloc(sizeof(char*));
+			sprintf(sourceMac,"%.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5]);
+			if (strcmp(sourceMac, arg->sourceMac) != 0)
+				return -1;
+		}
+
+		if (arg && arg->destMac) {
+			char* destMac = malloc(sizeof(char*));
+			sprintf(destMac,"%.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
+			if (strcmp(destMac, arg->destMac) != 0)
+				return -1;
+		}
+
+		if (arg && arg->sourceIp) {
+			if (strcmp(inet_ntoa(source.sin_addr), arg->sourceIp) != 0)
+				return -1;
+		}
+
+		if (arg && arg->destIp) {
+			if (strcmp(inet_ntoa(dest.sin_addr), arg->destIp) != 0)
+				return -1;
+		}
+
+		if (arg->sourcePort) {
+			if (ntohs(udp->source) != arg->sourcePort) {
+				return -1;
+			}
+		}
+
+		if (arg->destPort) {
+			if (ntohs(udp->dest) != arg->destPort) {
+				return -1;
+			}
+		}
+
+	printf("\n\t|UDP packet|\n");
 	fprintf(log_txt,"\n*************************UDP Packet******************************");
-	ethernet_header(buffer,buflen);
-	ip_header(buffer,buflen);
+	write_ethernet_header(eth);
+	write_ip_header(ip);
+
 	fprintf(log_txt,"\nUDP Header\n");
 
-	struct udphdr *udp = (struct udphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
 	fprintf(log_txt , "\t|-Source Port    	: %d\n" , ntohs(udp->source));
 	fprintf(log_txt , "\t|-Destination Port	: %d\n" , ntohs(udp->dest));
 	fprintf(log_txt , "\t|-UDP Length      	: %d\n" , ntohs(udp->len));
@@ -128,7 +210,7 @@ struct udphdr* udp_header(unsigned char* buffer, int buflen)
 	payload(buffer,buflen);
 
 	fprintf(log_txt,"*****************************************************************\n\n\n");
-	return udp;
+	return 0;
 }
 
 void data_process(unsigned char* buffer,int buflen, struct arg* arg)
@@ -139,33 +221,29 @@ void data_process(unsigned char* buffer,int buflen, struct arg* arg)
 	if (arg && arg->protocol != 0 && arg->protocol != ip->protocol)
 		return;
 
+	int returned = 0;
 	switch (ip->protocol)    //voir /etc/protocols file
 	{
 
 		case 6:
 			++tcp;
-			printf("\n\t|TCP Packet|\n");
-			struct tcphdr *tcp = tcp_header(buffer,buflen);
+			returned = tcp_header(buffer,buflen,arg);
 			break;
 
 		case 17:
 			++udp;
-			printf("\n\t|UDP packet|\n");
-			struct udphdr *udp = udp_header(buffer,buflen);
+			returned = udp_header(buffer,buflen,arg);
 			break;
 
 		default:
 			++other;
 
 	}
+	if (returned != -1) {
 	printf("\n\t|-Stats: TCP: %d  UDP: %d  Other: %d  Total: %d  \n\n",tcp,udp,other,total);
-
-
+	}
 }
 
-
-// Error : ./packet_sniff -p [protocol number] -m [source mac addr] -n [dest mac addr]
-//                -s [source ip] -d [dest ip] -t [source port] -r [dest port]
 struct arg* get_arg(int argc, char **argv) {
 	struct arg* arg = malloc(sizeof(struct arg*));
 
