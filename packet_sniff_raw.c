@@ -131,11 +131,14 @@ struct udphdr* udp_header(unsigned char* buffer, int buflen)
 	return udp;
 }
 
-void data_process(unsigned char* buffer,int buflen)
+void data_process(unsigned char* buffer,int buflen, struct arg* arg)
 {
 	struct iphdr *ip = (struct iphdr*)(buffer + sizeof (struct ethhdr));
 	++total;
-	/*On va uniquement voir le protocole UDP*/
+
+	if (arg && arg->protocol != 0 && arg->protocol != ip->protocol)
+		return;
+
 	switch (ip->protocol)    //voir /etc/protocols file
 	{
 
@@ -171,7 +174,7 @@ struct arg* get_arg(int argc, char **argv) {
 
   opterr = 0;
 
-  while ((c = getopt (argc, argv, "p:m:n:s:d:t:r")) != -1)
+  while ((c = getopt (argc, argv, "hp:m:n:s:d:t:r")) != -1)
     switch (c)
       {
       case 'p':
@@ -191,6 +194,9 @@ struct arg* get_arg(int argc, char **argv) {
         arg->sourcePort = atoi(optarg);
       case 'r':
         arg->destPort = atoi(optarg);
+			case 'h':
+	       printf("Usage: ./packet_sniff -p [protocol number] -m [source mac addr] -n [dest mac addr] -s [source ip] -d [dest ip] -t [source port] -r [dest port]\n");
+				 return NULL;
       case '?':
         if (optopt == 'c')
           fprintf (stderr, "Option -%c requires an argument.\n", optopt);
@@ -220,6 +226,9 @@ int main(int argc, char *argv[])
 	memset(buffer,0,65536);
 
 	struct arg* arg = get_arg(argc, argv);
+	if (arg == NULL) {
+		return -1;
+	}
 
 	log_txt=fopen("log.txt","w");
 	if(!log_txt)
@@ -250,7 +259,7 @@ int main(int argc, char *argv[])
 			return -1;
 		}
 		fflush(log_txt);
-		data_process(buffer,buflen);
+		data_process(buffer,buflen,arg);
 
 	}
 
